@@ -1,0 +1,33 @@
+{
+  "Config": {
+
+    "Application": {
+      "Name": "phoenix",
+      "Version": "0.1.0"
+    },
+
+    "System": {
+      "Daemon": {
+        "PidPath": "/tmp/phoenix.pid"
+      },
+      "Logging": {
+        "Level": "info",
+        "Path" : "/tmp/phoenix.log"
+      }
+    },
+
+    "Connector": {
+      "Firmware": {
+        "UnixSocket": {
+          "Client": {
+            "Addr": "/tmp/unix_client"
+          },
+          "Server": {
+            "Addr": "/tmp/unix_server"
+          }
+        }
+      }
+    }
+  }
+
+}

@@ -1,0 +1,16 @@
+[package]
+name = "phoenix"
+version = "0.1.0"
+authors = ["Alexey Pashinov <pashinov93@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+libc = "0.2.73"
+clap = "2.33.1"
+config = "0.10.1"
+log = "0.4.8"
+log4rs = "0.12.0"
+daemonize = "0.4.1"
+futures = "0.3.5"
+async-std = "1.6.2"
+async-signals = "0.3.1"
