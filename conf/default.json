@@ -17,10 +17,32 @@
     },
 
     "Connector": {
+      "MQTT": {
+        "URI": "<endpoint>",
+        "ClientId": "<id>",
+        "ConnOpt": {
+          "KeepAliveIntervalSec": 20,
+          "CleanSession": true,
+          "ReconnectRetryIntervalSec": 10
+        },
+        "SSLOpt": {
+          "TrustStore": "<rootCA.pem>",
+          "KeyStore": "<device.crt>",
+          "PrivateKey": "<device.key>"
+        },
+        "QOS": 1,
+        "Topics": {
+          "Pub": {
+
+          },
+          "Sub": ["topic1", "topic2"]
+        }
+      },
       "Firmware": {
         "UnixSocket": {
           "Client": {
-            "Addr": "/tmp/unix_client"
+            "Addr": "/tmp/unix_client",
+            "ReconnectRetryIntervalSec": 10
           },
           "Server": {
             "Addr": "/tmp/unix_server"

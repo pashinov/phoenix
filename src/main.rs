@@ -7,35 +7,45 @@ use daemonize::Daemonize;
 use futures::channel::mpsc;
 use futures::future::{Abortable, AbortHandle};
 use futures::stream::StreamExt;
-use log::info;
 use log4rs::append::console::ConsoleAppender;
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Config, Root};
 use log4rs::encode::pattern::PatternEncoder;
+use log::info;
 use log::LevelFilter;
 
 use connector::firmware::unix_sockets::{UnixClient, UnixServer};
+use connector::mqtt::paho_client::PahoClient;
 use handler::{HandlerRx, HandlerTx};
 
 mod connector;
 mod handler;
+mod data;
 
 async fn run_service(settings: config::Config) -> () {
     let cfg = Rc::new(settings);
-    let (sender_tx, sender_rx) = mpsc::channel::<String>(100);
-    let (receiver_tx, receiver_rx) = mpsc::channel::<String>(100);
+    let (firmware_sender_tx, firmware_sender_rx) = mpsc::channel::<String>(100);
+    let (firmware_receiver_tx, firmware_receiver_rx) = mpsc::channel::<String>(100);
+    let (mqtt_sender_tx, mqtt_sender_rx) = mpsc::channel::<String>(100);
+    let (mqtt_receiver_tx, mqtt_receiver_rx) = mpsc::channel::<String>(100);
 
-    let mut unix_client = UnixClient::new(cfg.clone(), receiver_rx);
+    let mut paho_client = PahoClient::new(cfg.clone(), mqtt_receiver_tx, mqtt_sender_rx);
+    let paho_client_connect = paho_client.connect();
+
+    let mut unix_client = UnixClient::new(cfg.clone(), firmware_receiver_rx);
     let unix_client_connect = unix_client.connect();
 
-    let mut unix_server = UnixServer::new(cfg.clone(), sender_tx);
+    let mut unix_server = UnixServer::new(cfg.clone(), firmware_sender_tx);
     let unix_server_start = unix_server.start();
 
-    let mut handler_tx = HandlerTx::new(cfg.clone(), sender_rx);
+    let mut handler_tx = HandlerTx::new(cfg.clone(), mqtt_sender_tx, firmware_sender_rx);
     let handler_tx_start = handler_tx.start();
 
-    let mut handler_rx = HandlerRx::new(cfg.clone(), receiver_tx);
+    let mut handler_rx = HandlerRx::new(cfg.clone(), firmware_receiver_tx, mqtt_receiver_rx);
     let handler_rx_start = handler_rx.start();
+
+    let (paho_client_abort_handle, paho_client_abort_registration) = AbortHandle::new_pair();
+    let abortable_paho_client = Abortable::new(paho_client_connect, paho_client_abort_registration);
 
     let (unix_client_abort_handle, unix_client_abort_registration) = AbortHandle::new_pair();
     let abortable_unix_client = Abortable::new(unix_client_connect, unix_client_abort_registration);
@@ -57,6 +67,7 @@ async fn run_service(settings: config::Config) -> () {
             let signal = signals.next().await.unwrap();
             match signal {
                 libc::SIGTERM => {
+                    paho_client_abort_handle.abort();
                     unix_client_abort_handle.abort();
                     unix_server_abort_handle.abort();
                     handler_tx_abort_handle.abort();
@@ -68,7 +79,7 @@ async fn run_service(settings: config::Config) -> () {
         }
     };
 
-    let (_, _, _, _, _) = futures::join!(abortable_unix_client, abortable_unix_server, abortable_handler_tx, abortable_handler_rx, abort);
+    let (_, _, _, _, _, _) = futures::join!(abortable_paho_client, abortable_unix_client, abortable_unix_server, abortable_handler_tx, abortable_handler_rx, abort);
 }
 
 fn main() {
@@ -91,7 +102,7 @@ fn main() {
 
     // Init configuration
     let mut settings = config::Config::default();
-    let config_file = args.value_of("config").unwrap_or("/etc/phoenix/config.json");
+    let config_file = args.value_of("config").unwrap_or("/home/parallels/git/phoenix/conf/default.json");
     settings.merge(config::File::with_name(config_file)).unwrap();
 
     // Init logging

@@ -3,15 +3,13 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use futures::channel::mpsc;
-use futures::sink::SinkExt;
-use futures::stream::StreamExt;
-use log::{info, warn};
-
 use async_std::io::BufReader;
 use async_std::io::prelude::*;
 use async_std::os::unix::net::{UnixListener, UnixStream};
-use async_std::task;
+use futures::channel::mpsc;
+use futures::sink::SinkExt;
+use futures::stream::StreamExt;
+use log::{debug, error, info, trace, warn};
 
 pub struct UnixClient {
     cfg: Rc<config::Config>,
@@ -34,23 +32,20 @@ impl UnixClient {
                     info!("Connection to GPShield successful");
                     loop {
                         let msg = self.rx.next().await.unwrap();
-                        stream.write_all(msg.as_bytes()).await.unwrap();
-                        info!("Message RX: {}", msg);
+                        match stream.write_all(msg.as_bytes()).await {
+                            Ok(_) => { debug!("Write message '{}' to socket successful", msg); }
+                            Err(err) => { error!("Write message '{}' to socket failed: {}", msg, err); }
+                        }
                     }
                 }
                 Err(err) => {
                     warn!("Connection attempt to GPShield failed: {:?}", err);
-                    task::sleep(Duration::from_secs(5)).await;
+                    let seconds = self.cfg.get_int("Config.Connector.Firmware.UnixSocket.Client.ReconnectRetryIntervalSec").unwrap() as u64;
+                    async_std::task::sleep(Duration::from_secs(seconds)).await;
                     continue;
                 }
             };
         }
-    }
-}
-
-impl Drop for UnixClient {
-    fn drop(&mut self) {
-        info!("Dropping UnixClient...");
     }
 }
 
@@ -73,7 +68,9 @@ impl UnixServer {
             fs::remove_file(addr.as_str()).unwrap();
         }
 
-        let listener = UnixListener::bind(addr).await.unwrap();
+        let listener = UnixListener::bind(addr.clone()).await.unwrap_or_else(|err| {
+            panic!("Error listening the unix addr '{}': {:?}", addr.clone(), err);
+        });
 
         loop {
             match listener.accept().await {
@@ -108,8 +105,14 @@ impl UnixServer {
     }
 }
 
+impl Drop for UnixClient {
+    fn drop(&mut self) {
+        trace!("Dropping UnixClient...");
+    }
+}
+
 impl Drop for UnixServer {
     fn drop(&mut self) {
-        info!("Dropping UnixServer...");
+        trace!("Dropping UnixServer...");
     }
 }
