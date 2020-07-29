@@ -1,0 +1,13 @@
+language: rust
+
+rust:
+  - stable
+
+jobs:
+  include:
+    - os: linux
+    - os: osx
+      env: OPENSSL_ROOT_DIR=$(brew --prefix openssl)
+
+script:
+  - cargo build --verbose --all
