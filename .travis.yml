@@ -3,11 +3,12 @@ language: rust
 rust:
   - stable
 
-jobs:
+matrix:
   include:
-    - os: linux
-    - os: osx
-      env: OPENSSL_ROOT_DIR=$(brew --prefix openssl)
+    - env: TARGET=x86_64-apple-darwin OPENSSL_ROOT_DIR=$(brew --prefix openssl)
+      os: osx
+    - env: TARGET=x86_64-unknown-linux-gnu
+      os: linux
 
 script:
-  - cargo build --verbose --all
+  - cargo build --release

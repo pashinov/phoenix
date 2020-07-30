@@ -7,11 +7,11 @@ use daemonize::Daemonize;
 use futures::channel::mpsc;
 use futures::future::{Abortable, AbortHandle};
 use futures::stream::StreamExt;
+use log::{info, warn};
 use log4rs::append::console::ConsoleAppender;
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Config, Root};
 use log4rs::encode::pattern::PatternEncoder;
-use log::info;
 use log::LevelFilter;
 
 use connector::firmware::unix_sockets::{UnixClient, UnixServer};
@@ -62,11 +62,13 @@ async fn run_service(settings: config::Config) -> () {
     let abort = async {
         let mut signals = Signals::new(vec![]).unwrap();
         signals.add_signal(libc::SIGTERM).unwrap();
+        signals.add_signal(libc::SIGINT).unwrap();
+        signals.add_signal(libc::SIGHUP).unwrap();
 
         loop {
             let signal = signals.next().await.unwrap();
             match signal {
-                libc::SIGTERM => {
+                libc::SIGTERM | libc::SIGINT => {
                     paho_client_abort_handle.abort();
                     unix_client_abort_handle.abort();
                     unix_server_abort_handle.abort();
@@ -74,7 +76,10 @@ async fn run_service(settings: config::Config) -> () {
                     handler_rx_abort_handle.abort();
                     break;
                 }
-                _ => {}
+                _ => {
+                    warn!("Signal handler not found");
+                    continue;
+                }
             }
         }
     };
@@ -133,7 +138,10 @@ fn main() {
             .privileged_action(|| info!("Running application as a daemon..."));
 
         match daemon.start() {
-            Ok(_) => { futures::executor::block_on(run_service(settings)); }
+            Ok(_) => {
+                info!("Running application in daemon mode...");
+                futures::executor::block_on(run_service(settings));
+            }
             Err(err) => { panic!("Running the daemon: {}", err) }
         }
     } else {
