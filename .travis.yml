@@ -7,8 +7,10 @@ matrix:
   include:
     - env: TARGET=x86_64-apple-darwin OPENSSL_ROOT_DIR=$(brew --prefix openssl)
       os: osx
+      osx_image: xcode12
     - env: TARGET=x86_64-unknown-linux-gnu
       os: linux
+      dist: bionic
 
 script:
   - cargo build --release
