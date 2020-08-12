@@ -1,1 +1,1 @@
-pub mod paho_client;
+pub mod paho;

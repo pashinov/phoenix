@@ -31,12 +31,7 @@
           "PrivateKey": "<device.key>"
         },
         "QOS": 1,
-        "Topics": {
-          "Pub": {
-
-          },
-          "Sub": ["topic1", "topic2"]
-        }
+        "Topic": []
       },
       "Firmware": {
         "UnixSocket": {
@@ -46,6 +41,12 @@
           },
           "Server": {
             "Addr": "/tmp/unix_server"
+          }
+        },
+        "ZMQ": {
+          "Sub":{
+            "Addr": "ipc:///tmp/phoenix_sender",
+            "Topic": "phoenix_sender"
           }
         }
       }
