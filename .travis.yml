@@ -8,9 +8,20 @@ matrix:
     - env: TARGET=x86_64-apple-darwin OPENSSL_ROOT_DIR=$(brew --prefix openssl)
       os: osx
       osx_image: xcode12
+      addons:
+        homebrew:
+          packages:
+            - protobuf
+            - zeromq
     - env: TARGET=x86_64-unknown-linux-gnu
       os: linux
       dist: bionic
+      addons:
+        apt:
+          packages:
+            - libprotobuf-dev
+            - protobuf-compiler
+            - libzmq3-dev
 
 script:
   - cargo build --release

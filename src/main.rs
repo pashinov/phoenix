@@ -14,50 +14,30 @@ use log4rs::config::{Appender, Config, Root};
 use log4rs::encode::pattern::PatternEncoder;
 use log::LevelFilter;
 
-use connector::firmware::unix_sockets::{UnixClient, UnixServer};
-use connector::mqtt::paho_client::PahoClient;
-use handler::{HandlerRx, HandlerTx};
+use connector::firmware::zmq::ZmqConnector;
+use connector::mqtt::paho::PahoConnector;
 
 mod connector;
-mod handler;
 mod data;
+mod phoenix;
 
 async fn run_service(settings: config::Config) -> () {
     let cfg = Rc::new(settings);
-    let (firmware_sender_tx, firmware_sender_rx) = mpsc::channel::<String>(100);
-    let (firmware_receiver_tx, firmware_receiver_rx) = mpsc::channel::<String>(100);
-    let (mqtt_sender_tx, mqtt_sender_rx) = mpsc::channel::<String>(100);
-    let (mqtt_receiver_tx, mqtt_receiver_rx) = mpsc::channel::<String>(100);
 
-    let mut paho_client = PahoClient::new(cfg.clone(), mqtt_receiver_tx, mqtt_sender_rx);
-    let paho_client_connect = paho_client.connect();
+    let (firmware_sender_tx, mqtt_sender_rx) = mpsc::channel::<String>(100);
+    let (mqtt_receiver_tx, firmware_receiver_rx) = mpsc::channel::<String>(100);
 
-    let mut unix_client = UnixClient::new(cfg.clone(), firmware_receiver_rx);
-    let unix_client_connect = unix_client.connect();
+    let mut mqtt_connector = PahoConnector::new(cfg.clone(), mqtt_receiver_tx, mqtt_sender_rx);
+    let mqtt_connector_connect = mqtt_connector.start();
 
-    let mut unix_server = UnixServer::new(cfg.clone(), firmware_sender_tx);
-    let unix_server_start = unix_server.start();
+    let mut firmware_connector = ZmqConnector::new(cfg.clone(), firmware_sender_tx, firmware_receiver_rx);
+    let firmware_connector_start = firmware_connector.start();
 
-    let mut handler_tx = HandlerTx::new(cfg.clone(), mqtt_sender_tx, firmware_sender_rx);
-    let handler_tx_start = handler_tx.start();
+    let (mqtt_connector_abort_handle, mqtt_connector_abort_registration) = AbortHandle::new_pair();
+    let abortable_mqtt_connector = Abortable::new(mqtt_connector_connect, mqtt_connector_abort_registration);
 
-    let mut handler_rx = HandlerRx::new(cfg.clone(), firmware_receiver_tx, mqtt_receiver_rx);
-    let handler_rx_start = handler_rx.start();
-
-    let (paho_client_abort_handle, paho_client_abort_registration) = AbortHandle::new_pair();
-    let abortable_paho_client = Abortable::new(paho_client_connect, paho_client_abort_registration);
-
-    let (unix_client_abort_handle, unix_client_abort_registration) = AbortHandle::new_pair();
-    let abortable_unix_client = Abortable::new(unix_client_connect, unix_client_abort_registration);
-
-    let (unix_server_abort_handle, unix_server_abort_registration) = AbortHandle::new_pair();
-    let abortable_unix_server = Abortable::new(unix_server_start, unix_server_abort_registration);
-
-    let (handler_tx_abort_handle, handler_tx_abort_registration) = AbortHandle::new_pair();
-    let abortable_handler_tx = Abortable::new(handler_tx_start, handler_tx_abort_registration);
-
-    let (handler_rx_abort_handle, handler_rx_abort_registration) = AbortHandle::new_pair();
-    let abortable_handler_rx = Abortable::new(handler_rx_start, handler_rx_abort_registration);
+    let (firmware_connector_abort_handle, firmware_connector_abort_registration) = AbortHandle::new_pair();
+    let abortable_firmware_connector = Abortable::new(firmware_connector_start, firmware_connector_abort_registration);
 
     let abort = async {
         let mut signals = Signals::new(vec![]).unwrap();
@@ -69,11 +49,8 @@ async fn run_service(settings: config::Config) -> () {
             let signal = signals.next().await.unwrap();
             match signal {
                 libc::SIGTERM | libc::SIGINT => {
-                    paho_client_abort_handle.abort();
-                    unix_client_abort_handle.abort();
-                    unix_server_abort_handle.abort();
-                    handler_tx_abort_handle.abort();
-                    handler_rx_abort_handle.abort();
+                    firmware_connector_abort_handle.abort();
+                    mqtt_connector_abort_handle.abort();
                     break;
                 }
                 _ => {
@@ -84,7 +61,7 @@ async fn run_service(settings: config::Config) -> () {
         }
     };
 
-    let (_, _, _, _, _, _) = futures::join!(abortable_paho_client, abortable_unix_client, abortable_unix_server, abortable_handler_tx, abortable_handler_rx, abort);
+    let (_, _, _) = futures::join!(abortable_firmware_connector, abortable_mqtt_connector, abort);
 }
 
 fn main() {
@@ -107,7 +84,7 @@ fn main() {
 
     // Init configuration
     let mut settings = config::Config::default();
-    let config_file = args.value_of("config").unwrap_or("/home/parallels/git/phoenix/conf/default.json");
+    let config_file = args.value_of("config").unwrap_or("/etc/phoenix/phoenix.json");
     settings.merge(config::File::with_name(config_file)).unwrap();
 
     // Init logging

@@ -9,7 +9,7 @@ use paho_mqtt as mqtt;
 
 use crate::data::MqttMessage;
 
-pub struct PahoClient {
+pub struct PahoConnector {
     paho_subscriber: PahoSubscriber,
     paho_publisher: PahoPublisher,
 }
@@ -26,7 +26,7 @@ struct PahoSubscriber {
     cli: Rc<RefCell<mqtt::AsyncClient>>,
 }
 
-impl PahoClient {
+impl PahoConnector {
     pub fn new(cfg: Rc<config::Config>, tx: mpsc::Sender<String>, rx: mpsc::Receiver<String>) -> Self {
         let uri = cfg.get_str("Config.Connector.MQTT.URI").unwrap();
         let id = cfg.get_str("Config.Connector.MQTT.ClientId").unwrap();
@@ -42,13 +42,13 @@ impl PahoClient {
 
         let ref_cli = Rc::new(RefCell::new(cli));
 
-        PahoClient {
+        PahoConnector {
             paho_subscriber: PahoSubscriber::new(Rc::clone(&cfg), tx, Rc::clone(&ref_cli)),
             paho_publisher: PahoPublisher::new(Rc::clone(&cfg), rx, Rc::clone(&ref_cli)),
         }
     }
 
-    pub async fn connect(&mut self) {
+    pub async fn start(&mut self) {
         let paho_subscriber_start = self.paho_subscriber.start();
         let paho_publisher_start = self.paho_publisher.start();
 
@@ -59,15 +59,14 @@ impl PahoClient {
 impl PahoPublisher {
     fn new(cfg: Rc<config::Config>, rx: mpsc::Receiver<String>, cli: Rc<RefCell<mqtt::AsyncClient>>) -> Self {
         PahoPublisher {
-            cfg: cfg,
+            cfg,
             rx,
             cli,
         }
     }
 
     async fn start(&mut self) -> () {
-        loop {
-            let msg = self.rx.next().await.unwrap();
+        while let Some(msg) = self.rx.next().await {
             let qos = self.cfg.get_int("Config.Connector.MQTT.QOS").unwrap() as i32;
 
             let mqtt_msg: MqttMessage = match serde_json::from_str(&msg) {
@@ -80,6 +79,9 @@ impl PahoPublisher {
 
             let topic = mqtt_msg.topic;
             let payload = mqtt_msg.payload;
+
+            info!("Publishing MQTT message where topic is '{}', payload is '{}'", topic, payload);
+
             let pub_msg = mqtt::Message::new(topic.clone(), payload.clone(), qos);
             if self.cli.borrow().is_connected() {
                 match self.cli.borrow().publish(pub_msg).await {
@@ -132,8 +134,9 @@ impl PahoSubscriber {
             async_std::task::sleep(Duration::from_secs(reconnect_retry_interval.clone())).await;
             info!("Connecting to the MQTT server...");
         }
+        info!("...Connection established");
 
-        let topics = self.cfg.get_array("Config.Connector.MQTT.Topics.Sub").unwrap();
+        let topics = self.cfg.get_array("Config.Connector.MQTT.Topic").unwrap();
         for topic in topics {
             match self.cli.borrow().subscribe(topic.clone().into_str().unwrap(), qos).await {
                 Ok(_) => { info!("Subscribe to topic '{}' successful", topic.clone().into_str().unwrap()); }
@@ -185,8 +188,8 @@ impl Drop for PahoPublisher {
     }
 }
 
-impl Drop for PahoClient {
+impl Drop for PahoConnector {
     fn drop(&mut self) {
-        trace!("Dropping PahoClient...");
+        trace!("Dropping PahoConnector...");
     }
 }
