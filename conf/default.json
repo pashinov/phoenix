@@ -44,6 +44,10 @@
           }
         },
         "ZMQ": {
+          "Pub":{
+            "Addr": "ipc:///tmp/phoenix_receiver",
+            "Topic": "phoenix_receiver"
+          },
           "Sub":{
             "Addr": "ipc:///tmp/phoenix_sender",
             "Topic": "phoenix_sender"
