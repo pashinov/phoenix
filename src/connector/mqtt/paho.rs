@@ -72,7 +72,7 @@ impl PahoPublisher {
             let mqtt_msg: MqttMessage = match serde_json::from_str(&msg) {
                 Ok(val) => { val }
                 Err(err) => {
-                    error!("Publish message: parsing JSON message was unsuccessful: {}", err);
+                    error!("Parsing JSON message was unsuccessful: {}", err);
                     continue;
                 }
             };
