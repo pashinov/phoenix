@@ -3,7 +3,7 @@ language: rust
 rust:
   - stable
 
-matrix:
+jobs:
   include:
     - env: TARGET=x86_64-apple-darwin OPENSSL_ROOT_DIR=$(brew --prefix openssl)
       os: osx
