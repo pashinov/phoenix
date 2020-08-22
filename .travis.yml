@@ -5,7 +5,7 @@ rust:
 
 jobs:
   include:
-    - env: TARGET=x86_64-apple-darwin OPENSSL_ROOT_DIR=$(brew --prefix openssl)
+    - arch: amd64
       os: osx
       osx_image: xcode12
       addons:
@@ -13,7 +13,17 @@ jobs:
           packages:
             - protobuf
             - zeromq
-    - env: TARGET=x86_64-unknown-linux-gnu
+      env: OPENSSL_ROOT_DIR=$(brew --prefix openssl)
+    - arch: amd64
+      os: linux
+      dist: bionic
+      addons:
+        apt:
+          packages:
+            - libprotobuf-dev
+            - protobuf-compiler
+            - libzmq3-dev
+    - arch: arm64
       os: linux
       dist: bionic
       addons:
