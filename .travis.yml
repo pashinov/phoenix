@@ -13,7 +13,17 @@ jobs:
           packages:
             - protobuf
             - zeromq
-      env: OPENSSL_ROOT_DIR=$(brew --prefix openssl)
+      env:
+        - TARGET=amd64-osx
+        - OPENSSL_ROOT_DIR=$(brew --prefix openssl)
+      deploy:
+        provider: releases
+        api_key: $GITHUB_TOKEN
+        file: $TARGET.tar.gz
+        skip_cleanup: true
+        on:
+          repo: pashinov/phoenix
+          tags: true
     - arch: amd64
       os: linux
       dist: bionic
@@ -23,6 +33,16 @@ jobs:
             - libprotobuf-dev
             - protobuf-compiler
             - libzmq3-dev
+      env:
+        - TARGET=amd64-linux
+      deploy:
+        provider: releases
+        api_key: $GITHUB_TOKEN
+        file: $TARGET.tar.gz
+        skip_cleanup: true
+        on:
+          repo: pashinov/phoenix
+          tags: true
     - arch: arm64
       os: linux
       dist: bionic
@@ -32,6 +52,17 @@ jobs:
             - libprotobuf-dev
             - protobuf-compiler
             - libzmq3-dev
+      env:
+        - TARGET=arm64-linux
+      deploy:
+        provider: releases
+        api_key: $GITHUB_TOKEN
+        file: $TARGET.tar.gz
+        skip_cleanup: true
+        on:
+          repo: pashinov/phoenix
+          tags: true
 
 script:
   - cargo build --release
+  - tar -C target/release -czf $TARGET.tar.gz phoenix
