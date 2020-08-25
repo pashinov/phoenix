@@ -67,7 +67,7 @@ async fn run_service(settings: config::Config) -> () {
 fn main() {
     // Parsing arguments
     let args = App::new("Phoenix")
-        .version("0.1.0")
+        .version(env!("CARGO_PKG_VERSION"))
         .author("Pashinov A. <pashinov93@gmail.com>")
         .arg(Arg::with_name("daemon")
             .short("d")
