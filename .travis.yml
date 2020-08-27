@@ -14,12 +14,12 @@ jobs:
             - protobuf
             - zeromq
       env:
-        - TARGET=amd64-osx
+        - TARGET=macos-amd64
         - OPENSSL_ROOT_DIR=$(brew --prefix openssl)
       deploy:
         provider: releases
         api_key: $GITHUB_TOKEN
-        file: $TARGET.tar.gz
+        file: phoenix-$TRAVIS_TAG-$TARGET.tar.gz
         skip_cleanup: true
         on:
           repo: pashinov/phoenix
@@ -34,11 +34,11 @@ jobs:
             - protobuf-compiler
             - libzmq3-dev
       env:
-        - TARGET=amd64-linux
+        - TARGET=linux-amd64
       deploy:
         provider: releases
         api_key: $GITHUB_TOKEN
-        file: $TARGET.tar.gz
+        file: phoenix-$TRAVIS_TAG-$TARGET.tar.gz
         skip_cleanup: true
         on:
           repo: pashinov/phoenix
@@ -53,11 +53,11 @@ jobs:
             - protobuf-compiler
             - libzmq3-dev
       env:
-        - TARGET=arm64-linux
+        - TARGET=linux-arm64
       deploy:
         provider: releases
         api_key: $GITHUB_TOKEN
-        file: $TARGET.tar.gz
+        file: phoenix-$TRAVIS_TAG-$TARGET.tar.gz
         skip_cleanup: true
         on:
           repo: pashinov/phoenix
@@ -65,4 +65,4 @@ jobs:
 
 script:
   - cargo build --release
-  - tar -C target/release -czf $TARGET.tar.gz phoenix
+  - if [ -n "$TRAVIS_TAG" ]; then tar -C  target/release -czf phoenix-$TRAVIS_TAG-$TARGET.tar.gz phoenix; fi
