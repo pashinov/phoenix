@@ -18,7 +18,6 @@ use connector::firmware::zmq::ZmqConnector;
 use connector::mqtt::paho::PahoConnector;
 
 mod connector;
-mod data;
 mod phoenix;
 
 async fn run_service(settings: config::Config) -> () {

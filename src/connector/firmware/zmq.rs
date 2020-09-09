@@ -10,11 +10,7 @@ use std::thread;
 use futures::channel::mpsc;
 use futures::SinkExt;
 use futures::stream::StreamExt;
-use log::{error, trace};
-use protobuf::Message;
-
-use crate::data::MqttMessage;
-use crate::phoenix;
+use log::{trace};
 
 pub struct ZmqConnector {
     cfg: Rc<config::Config>,
@@ -40,31 +36,14 @@ impl ZmqConnector {
         let publisher = async {
             let zpublisher = Arc::new(Mutex::new(ZmqPublisher::new(pub_cfg)));
             while let Some(msg) = sub_rx.borrow_mut().next().await {
-                let mqtt_msg: MqttMessage = match serde_json::from_str(&msg) {
-                    Ok(val) => { val }
-                    Err(err) => {
-                        error!("Parsing JSON message was unsuccessful: {}", err);
-                        continue;
-                    }
-                };
-
-                let mut message = phoenix::message::new();
-                message.topic = mqtt_msg.topic;
-                message.payload = mqtt_msg.payload;
-
-                zpublisher.lock().unwrap().publish(message.write_to_bytes().unwrap());
+                zpublisher.lock().unwrap().publish(Vec::from(msg.as_bytes()));
             }
         };
 
         let subscriber = async {
             let zsubscriber = Arc::new(Mutex::new(ZmqSubscriber::new(sub_cfg)));
             while let (_, proto) = (&mut *zsubscriber.lock().unwrap()).await {
-                let message: phoenix::message = protobuf::parse_from_bytes(proto.as_bytes()).unwrap();
-                let topic = message.topic;
-                let payload = message.payload;
-
-                let mqtt_msg = MqttMessage { topic, payload };
-                pub_tx.borrow_mut().send(serde_json::to_string(&mqtt_msg).unwrap()).await.unwrap();
+                pub_tx.borrow_mut().send(proto).await.unwrap();
             }
         };
 

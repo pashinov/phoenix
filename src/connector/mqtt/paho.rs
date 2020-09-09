@@ -6,8 +6,9 @@ use futures::SinkExt;
 use futures::stream::StreamExt;
 use log::{debug, error, info, trace, warn};
 use paho_mqtt as mqtt;
+use protobuf::Message;
 
-use crate::data::MqttMessage;
+use crate::phoenix;
 
 pub struct PahoConnector {
     paho_subscriber: PahoSubscriber,
@@ -69,16 +70,9 @@ impl PahoPublisher {
         while let Some(msg) = self.rx.next().await {
             let qos = self.cfg.get_int("Config.Connector.MQTT.QOS").unwrap() as i32;
 
-            let mqtt_msg: MqttMessage = match serde_json::from_str(&msg) {
-                Ok(val) => { val }
-                Err(err) => {
-                    error!("Parsing JSON message was unsuccessful: {}", err);
-                    continue;
-                }
-            };
-
-            let topic = mqtt_msg.topic;
-            let payload = mqtt_msg.payload;
+            let message: phoenix::message = protobuf::parse_from_bytes(msg.as_bytes()).unwrap();
+            let topic = message.topic;
+            let payload = message.payload;
 
             info!("Publishing MQTT message where topic is '{}', payload is '{}'", topic, payload);
 
@@ -149,8 +143,12 @@ impl PahoSubscriber {
         while let Some(msg_opt) = strm.next().await {
             if let Some(msg) = msg_opt {
                 info!("Received MQTT message: topic is {}; payload is {}", msg.topic(), msg.payload_str());
-                let mqtt_msg = MqttMessage { topic: msg.topic().to_string(), payload: msg.payload_str().to_string() };
-                self.tx.send(serde_json::to_string(&mqtt_msg).unwrap()).await.unwrap();
+
+                let mut message = phoenix::message::new();
+                message.topic = msg.topic().to_string();
+                message.payload = msg.payload_str().to_string();
+
+                self.tx.send(String::from_utf8(message.write_to_bytes().unwrap()).expect("Found invalid UTF-8")).await.unwrap();
             } else {
                 // A "None" means we were disconnected. Try to reconnect...
                 warn!("Lost connection. Attempting reconnect.");
