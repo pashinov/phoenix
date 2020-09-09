@@ -10,20 +10,16 @@ use std::thread;
 use futures::channel::mpsc;
 use futures::SinkExt;
 use futures::stream::StreamExt;
-use log::{error, trace};
-use protobuf::Message;
-
-use crate::data::MqttMessage;
-use crate::phoenix;
+use log::{trace};
 
 pub struct ZmqConnector {
     cfg: Rc<config::Config>,
-    tx: Rc<RefCell<mpsc::Sender<String>>>,
-    rx: Rc<RefCell<mpsc::Receiver<String>>>,
+    tx: Rc<RefCell<mpsc::Sender<Vec<u8>>>>,
+    rx: Rc<RefCell<mpsc::Receiver<Vec<u8>>>>,
 }
 
 impl ZmqConnector {
-    pub fn new(cfg: Rc<config::Config>, tx: mpsc::Sender<String>, rx: mpsc::Receiver<String>) -> Self {
+    pub fn new(cfg: Rc<config::Config>, tx: mpsc::Sender<Vec<u8>>, rx: mpsc::Receiver<Vec<u8>>) -> Self {
         ZmqConnector {
             cfg,
             tx: Rc::new(RefCell::new(tx)),
@@ -40,31 +36,14 @@ impl ZmqConnector {
         let publisher = async {
             let zpublisher = Arc::new(Mutex::new(ZmqPublisher::new(pub_cfg)));
             while let Some(msg) = sub_rx.borrow_mut().next().await {
-                let mqtt_msg: MqttMessage = match serde_json::from_str(&msg) {
-                    Ok(val) => { val }
-                    Err(err) => {
-                        error!("Parsing JSON message was unsuccessful: {}", err);
-                        continue;
-                    }
-                };
-
-                let mut message = phoenix::message::new();
-                message.topic = mqtt_msg.topic;
-                message.payload = mqtt_msg.payload;
-
-                zpublisher.lock().unwrap().publish(message.write_to_bytes().unwrap());
+                zpublisher.lock().unwrap().publish(msg);
             }
         };
 
         let subscriber = async {
             let zsubscriber = Arc::new(Mutex::new(ZmqSubscriber::new(sub_cfg)));
             while let (_, proto) = (&mut *zsubscriber.lock().unwrap()).await {
-                let message: phoenix::message = protobuf::parse_from_bytes(proto.as_bytes()).unwrap();
-                let topic = message.topic;
-                let payload = message.payload;
-
-                let mqtt_msg = MqttMessage { topic, payload };
-                pub_tx.borrow_mut().send(serde_json::to_string(&mqtt_msg).unwrap()).await.unwrap();
+                pub_tx.borrow_mut().send(proto).await.unwrap();
             }
         };
 
@@ -116,7 +95,7 @@ impl ZmqSubscriber {
 }
 
 impl Future for ZmqSubscriber {
-    type Output = (String, String);
+    type Output = (Vec<u8>, Vec<u8>);
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         if self.inner.has_data_to_read() {
@@ -154,14 +133,12 @@ impl ZmqSub {
         thread::spawn(move || {
             loop {
                 let topic = zsock
-                    .recv_string(0)
-                    .expect("failed receiving topic")
-                    .expect("failed unwrapping topic");
+                    .recv_bytes(0)
+                    .expect("failed receiving topic");
 
                 let payload = zsock
-                    .recv_string(0)
-                    .expect("failed receiving payload")
-                    .expect("failed unwrapping payload");
+                    .recv_bytes(0)
+                    .expect("failed receiving payload");
 
                 let mut inner = this_inner_arc.lock().unwrap();
                 inner.data.push_back((topic, payload));
@@ -179,7 +156,7 @@ impl ZmqSub {
         !inner.data.is_empty()
     }
 
-    fn read_data(&self) -> (String, String) {
+    fn read_data(&self) -> (Vec<u8>, Vec<u8>) {
         let mut inner = self.inner_arc.lock().unwrap();
         let (topic, payload) = inner.data.pop_front().unwrap();
         (topic, payload)
@@ -193,7 +170,7 @@ impl ZmqSub {
 }
 
 struct InnerZmqSub {
-    data: VecDeque<(String, String)>,
+    data: VecDeque<(Vec<u8>, Vec<u8>)>,
     readable_waker: Option<Waker>,
 }
 

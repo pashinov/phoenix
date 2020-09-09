@@ -10,5 +10,5 @@ MQTT service with a flexible data collection and communication architecture with
 [travis-link]:      https://travis-ci.org/pashinov/phoenix
 [license-badge]:    https://img.shields.io/badge/license-MIT-blue.svg
 [license-link]:     https://github.com/pashinov/phoenix/blob/develop/LICENSE
-[release-badge]:    https://img.shields.io/badge/release-v0.1.0-blue.svg
+[release-badge]:    https://img.shields.io/badge/release-v0.1.1-blue.svg
 [release-link]:     https://github.com/pashinov/phoenix/releases

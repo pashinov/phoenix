@@ -6,8 +6,9 @@ use futures::SinkExt;
 use futures::stream::StreamExt;
 use log::{debug, error, info, trace, warn};
 use paho_mqtt as mqtt;
+use protobuf::Message;
 
-use crate::data::MqttMessage;
+use crate::phoenix;
 
 pub struct PahoConnector {
     paho_subscriber: PahoSubscriber,
@@ -16,18 +17,18 @@ pub struct PahoConnector {
 
 struct PahoPublisher {
     cfg: Rc<config::Config>,
-    rx: mpsc::Receiver<String>,
+    rx: mpsc::Receiver<Vec<u8>>,
     cli: Rc<RefCell<mqtt::AsyncClient>>,
 }
 
 struct PahoSubscriber {
     cfg: Rc<config::Config>,
-    tx: mpsc::Sender<String>,
+    tx: mpsc::Sender<Vec<u8>>,
     cli: Rc<RefCell<mqtt::AsyncClient>>,
 }
 
 impl PahoConnector {
-    pub fn new(cfg: Rc<config::Config>, tx: mpsc::Sender<String>, rx: mpsc::Receiver<String>) -> Self {
+    pub fn new(cfg: Rc<config::Config>, tx: mpsc::Sender<Vec<u8>>, rx: mpsc::Receiver<Vec<u8>>) -> Self {
         let uri = cfg.get_str("Config.Connector.MQTT.URI").unwrap();
         let id = cfg.get_str("Config.Connector.MQTT.ClientId").unwrap();
 
@@ -57,7 +58,7 @@ impl PahoConnector {
 }
 
 impl PahoPublisher {
-    fn new(cfg: Rc<config::Config>, rx: mpsc::Receiver<String>, cli: Rc<RefCell<mqtt::AsyncClient>>) -> Self {
+    fn new(cfg: Rc<config::Config>, rx: mpsc::Receiver<Vec<u8>>, cli: Rc<RefCell<mqtt::AsyncClient>>) -> Self {
         PahoPublisher {
             cfg,
             rx,
@@ -69,16 +70,9 @@ impl PahoPublisher {
         while let Some(msg) = self.rx.next().await {
             let qos = self.cfg.get_int("Config.Connector.MQTT.QOS").unwrap() as i32;
 
-            let mqtt_msg: MqttMessage = match serde_json::from_str(&msg) {
-                Ok(val) => { val }
-                Err(err) => {
-                    error!("Parsing JSON message was unsuccessful: {}", err);
-                    continue;
-                }
-            };
-
-            let topic = mqtt_msg.topic;
-            let payload = mqtt_msg.payload;
+            let message: phoenix::MqttMessage = protobuf::parse_from_bytes(msg.as_slice()).unwrap();
+            let topic = message.topic;
+            let payload = message.payload;
 
             info!("Publishing MQTT message where topic is '{}', payload is '{}'", topic, payload);
 
@@ -94,7 +88,7 @@ impl PahoPublisher {
 }
 
 impl PahoSubscriber {
-    fn new(cfg: Rc<config::Config>, tx: mpsc::Sender<String>, cli: Rc<RefCell<mqtt::AsyncClient>>) -> Self {
+    fn new(cfg: Rc<config::Config>, tx: mpsc::Sender<Vec<u8>>, cli: Rc<RefCell<mqtt::AsyncClient>>) -> Self {
         PahoSubscriber {
             cfg,
             tx,
@@ -149,8 +143,12 @@ impl PahoSubscriber {
         while let Some(msg_opt) = strm.next().await {
             if let Some(msg) = msg_opt {
                 info!("Received MQTT message: topic is {}; payload is {}", msg.topic(), msg.payload_str());
-                let mqtt_msg = MqttMessage { topic: msg.topic().to_string(), payload: msg.payload_str().to_string() };
-                self.tx.send(serde_json::to_string(&mqtt_msg).unwrap()).await.unwrap();
+
+                let mut message = phoenix::MqttMessage::new();
+                message.topic = msg.topic().to_string();
+                message.payload = msg.payload_str().to_string();
+
+                self.tx.send(message.write_to_bytes().unwrap()).await.unwrap();
             } else {
                 // A "None" means we were disconnected. Try to reconnect...
                 warn!("Lost connection. Attempting reconnect.");

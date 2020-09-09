@@ -18,14 +18,13 @@ use connector::firmware::zmq::ZmqConnector;
 use connector::mqtt::paho::PahoConnector;
 
 mod connector;
-mod data;
 mod phoenix;
 
 async fn run_service(settings: config::Config) -> () {
     let cfg = Rc::new(settings);
 
-    let (firmware_sender_tx, mqtt_sender_rx) = mpsc::channel::<String>(100);
-    let (mqtt_receiver_tx, firmware_receiver_rx) = mpsc::channel::<String>(100);
+    let (firmware_sender_tx, mqtt_sender_rx) = mpsc::channel::<Vec<u8>>(100);
+    let (mqtt_receiver_tx, firmware_receiver_rx) = mpsc::channel::<Vec<u8>>(100);
 
     let mut mqtt_connector = PahoConnector::new(cfg.clone(), mqtt_receiver_tx, mqtt_sender_rx);
     let mqtt_connector_connect = mqtt_connector.start();
