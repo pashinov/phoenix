@@ -17,18 +17,18 @@ pub struct PahoConnector {
 
 struct PahoPublisher {
     cfg: Rc<config::Config>,
-    rx: mpsc::Receiver<String>,
+    rx: mpsc::Receiver<Vec<u8>>,
     cli: Rc<RefCell<mqtt::AsyncClient>>,
 }
 
 struct PahoSubscriber {
     cfg: Rc<config::Config>,
-    tx: mpsc::Sender<String>,
+    tx: mpsc::Sender<Vec<u8>>,
     cli: Rc<RefCell<mqtt::AsyncClient>>,
 }
 
 impl PahoConnector {
-    pub fn new(cfg: Rc<config::Config>, tx: mpsc::Sender<String>, rx: mpsc::Receiver<String>) -> Self {
+    pub fn new(cfg: Rc<config::Config>, tx: mpsc::Sender<Vec<u8>>, rx: mpsc::Receiver<Vec<u8>>) -> Self {
         let uri = cfg.get_str("Config.Connector.MQTT.URI").unwrap();
         let id = cfg.get_str("Config.Connector.MQTT.ClientId").unwrap();
 
@@ -58,7 +58,7 @@ impl PahoConnector {
 }
 
 impl PahoPublisher {
-    fn new(cfg: Rc<config::Config>, rx: mpsc::Receiver<String>, cli: Rc<RefCell<mqtt::AsyncClient>>) -> Self {
+    fn new(cfg: Rc<config::Config>, rx: mpsc::Receiver<Vec<u8>>, cli: Rc<RefCell<mqtt::AsyncClient>>) -> Self {
         PahoPublisher {
             cfg,
             rx,
@@ -70,7 +70,7 @@ impl PahoPublisher {
         while let Some(msg) = self.rx.next().await {
             let qos = self.cfg.get_int("Config.Connector.MQTT.QOS").unwrap() as i32;
 
-            let message: phoenix::message = protobuf::parse_from_bytes(msg.as_bytes()).unwrap();
+            let message: phoenix::MqttMessage = protobuf::parse_from_bytes(msg.as_slice()).unwrap();
             let topic = message.topic;
             let payload = message.payload;
 
@@ -88,7 +88,7 @@ impl PahoPublisher {
 }
 
 impl PahoSubscriber {
-    fn new(cfg: Rc<config::Config>, tx: mpsc::Sender<String>, cli: Rc<RefCell<mqtt::AsyncClient>>) -> Self {
+    fn new(cfg: Rc<config::Config>, tx: mpsc::Sender<Vec<u8>>, cli: Rc<RefCell<mqtt::AsyncClient>>) -> Self {
         PahoSubscriber {
             cfg,
             tx,
@@ -144,11 +144,11 @@ impl PahoSubscriber {
             if let Some(msg) = msg_opt {
                 info!("Received MQTT message: topic is {}; payload is {}", msg.topic(), msg.payload_str());
 
-                let mut message = phoenix::message::new();
+                let mut message = phoenix::MqttMessage::new();
                 message.topic = msg.topic().to_string();
                 message.payload = msg.payload_str().to_string();
 
-                self.tx.send(String::from_utf8(message.write_to_bytes().unwrap()).expect("Found invalid UTF-8")).await.unwrap();
+                self.tx.send(message.write_to_bytes().unwrap()).await.unwrap();
             } else {
                 // A "None" means we were disconnected. Try to reconnect...
                 warn!("Lost connection. Attempting reconnect.");
